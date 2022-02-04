@@ -2,112 +2,109 @@ using UnityEngine;
 using System.Collections;
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
-
+using System.Threading;
+using System.Text;
+using TMPro;
+using UnityEngine.UI;
  
 
-public class networkSocket : MonoBehaviour
+
+public class networkSocket:MonoBehaviour
 {
-    public String host = "localhost";
-    public Int32 port = 50000;
+    public TMP_Text statusText;
+    Socket serverSocket;
+    Socket clientSocket;
+    IPEndPoint ipEnd; 
+    string recvStr;
+    string sendStr; 
+    byte[] recvData=new byte[1024];
+    byte[] sendData=new byte[1024];
+    int recvLen; 
+    Thread connectThread;
 
-    internal Boolean socket_ready = false;
-    internal String input_buffer = "";
-    TcpClient tcp_socket;
-    NetworkStream net_stream;
 
-    StreamWriter socket_writer;
-    StreamReader socket_reader;
+    void InitSocket()
+    {
+        
+        ipEnd=new IPEndPoint(0,60000);
+        
+        serverSocket=new Socket(AddressFamily.InterNetwork,SocketType.Stream,ProtocolType.Tcp);
+        serverSocket.Bind(ipEnd);
+        serverSocket.Listen(10);
 
+        connectThread= new Thread(new ThreadStart(SocketReceive));
+        connectThread.Start();
+    }
+
+   
+    void SocketConnet()
+    {
+        if(clientSocket!=null)
+            clientSocket.Close();
+        print("Waiting for a client");
+        clientSocket=serverSocket.Accept();
+        IPEndPoint ipEndClient=(IPEndPoint)clientSocket.RemoteEndPoint;
+        print("Connect with "+ipEndClient.Address.ToString()+":"+ipEndClient.Port.ToString());
+        sendStr="Welcome to my server";
+        SocketSend(sendStr);
+    }
+
+    void SocketSend(string sendStr)
+    {
+        sendData=new byte[1024];
+        sendData=Encoding.ASCII.GetBytes(sendStr);
+        clientSocket.Send(sendData,sendData.Length,SocketFlags.None);
+    }
+
+    void SocketReceive()
+    {
+        SocketConnet();      
+        while(true)
+        {
+         
+            recvData=new byte[1024];
+            recvLen=clientSocket.Receive(recvData);
+            if(recvLen==0)
+            {
+                SocketConnet();
+                continue;
+            }
+        
+            recvStr=Encoding.ASCII.GetString(recvData,0,recvLen);
+            print(recvStr);
+            sendStr="From Server: "+recvStr;
+            SocketSend(sendStr);
+        }
+    }
+
+    void SocketQuit()
+    {
+        if(clientSocket!=null)
+            clientSocket.Close();
+        if(connectThread!=null)
+        {
+            connectThread.Interrupt();
+            connectThread.Abort();
+        }
+        serverSocket.Close();
+        print("diconnect");
+    }
+
+    void Start()
+    {
+        InitSocket();
+    }
 
 
     void Update()
     {
-        string received_data = readSocket();
-        string key_stroke = Input.inputString;
-
-        // Collects keystrokes into a buffer
-        if (key_stroke != ""){
-            input_buffer += key_stroke;
-
-            if (key_stroke == "\n"){
-            	// Send the buffer, clean it
-            	Debug.Log("Sending: " + input_buffer);
-            	writeSocket(input_buffer);
-            	input_buffer = "";
-            }
-
-        }
-
-
-        if (received_data != "")
-        {
-        	// Do something with the received data,
-        	// print it in the log for now
-            Debug.Log(received_data);
-        }
-    }
-
-
-    void Awake()
-    {
-        setupSocket();
+        statusText.text = Encoding.ASCII.GetString(recvData,0,recvLen);
     }
 
     void OnApplicationQuit()
     {
-        closeSocket();
+        SocketQuit();
     }
-
-    public void setupSocket()
-    {
-        try
-        {
-            tcp_socket = new TcpClient(host, port);
-
-            net_stream = tcp_socket.GetStream();
-            socket_writer = new StreamWriter(net_stream);
-            socket_reader = new StreamReader(net_stream);
-
-            socket_ready = true;
-        }
-        catch (Exception e)
-        {
-        	// Something went wrong
-            Debug.Log("Socket error: " + e);
-        }
-    }
-
-    public void writeSocket(string line)
-    {
-        if (!socket_ready)
-            return;
-            
-        line = line + "\r\n";
-        socket_writer.Write(line);
-        socket_writer.Flush();
-    }
-
-    public String readSocket()
-    {
-        if (!socket_ready)
-            return "";
-
-        if (net_stream.DataAvailable)
-            return socket_reader.ReadLine();
-
-        return "";
-    }
-
-    public void closeSocket()
-    {
-        if (!socket_ready)
-            return;
-
-        socket_writer.Close();
-        socket_reader.Close();
-        tcp_socket.Close();
-        socket_ready = false;
-    }
-
 }
